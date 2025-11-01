@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Container,
   Typography,
@@ -18,6 +18,7 @@ import {
   LinearProgress,
   Alert,
   Snackbar,
+  CircularProgress,
   useTheme,
   FormControl,
   InputLabel,
@@ -45,12 +46,15 @@ import {
   CheckCircle as CheckCircleIcon,
   FilterList as FilterListIcon,
   Search as SearchIcon,
-  Sort as SortIcon,
   Visibility as VisibilityIcon,
   PlayArrow as PlayArrowIcon,
-  Stop as StopIcon
+  Stop as StopIcon,
+  UploadFile as UploadFileIcon,
+  FileDownload as FileDownloadIcon,
+  People as PeopleIcon,
+  Assignment as AssignmentIcon
 } from '@mui/icons-material';
-import { quizAPI, questionAPI, quizResultAPI } from '../services/api';
+import { quizAPI, questionAPI, quizResultAPI, importAPI } from '../services/api';
 import { Quiz, Question, QuizWithAssignment } from '../types';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -64,8 +68,16 @@ const Quizzes: React.FC = () => {
   const [openDialog, setOpenDialog] = useState(false);
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [questionViewDialogOpen, setQuestionViewDialogOpen] = useState(false);
   const [selectedQuiz, setSelectedQuiz] = useState<QuizWithAssignment | null>(null);
+  const [selectedQuestion, setSelectedQuestion] = useState<Question | null>(null);
+  const [quizAssignments, setQuizAssignments] = useState<any[]>([]);
+  const [loadingAssignments, setLoadingAssignments] = useState(false);
+  const [expandedAssignments, setExpandedAssignments] = useState<Record<number, boolean>>({});
   const [editingQuiz, setEditingQuiz] = useState<Quiz | null>(null);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importing, setImporting] = useState(false);
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -83,8 +95,12 @@ const Quizzes: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterSubject, setFilterSubject] = useState('');
+  const [questionSearchTerm, setQuestionSearchTerm] = useState('');
+  const [questionFilterSubject, setQuestionFilterSubject] = useState('');
+  const [questionFilterDifficulty, setQuestionFilterDifficulty] = useState('');
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [total, setTotal] = useState(0);
   const [selectedQuizCompletionStatus, setSelectedQuizCompletionStatus] = useState<boolean>(false);
   const [assignmentCompletionStatus, setAssignmentCompletionStatus] = useState<Record<string, boolean>>(() => {
     // Load cached completion status from localStorage on init
@@ -146,14 +162,7 @@ const Quizzes: React.FC = () => {
     try {
       const response = await quizResultAPI.checkQuizCompletion(quizId, assignmentId);
       const completed = response.data.success && response.data.data.completed;
-      console.log(`Checking completion for quiz ${quizId}, assignment ${assignmentId}:`, {
-        response: response.data,
-        completed,
-        quizId,
-        assignmentId
-      });
       setSelectedQuizCompletionStatus(completed);
-      console.log(`Set completion status to ${completed} for quiz ${quizId}, assignment ${assignmentId}`);
     } catch (error) {
       console.error(`Error checking completion for selected quiz ${quizId}, assignment ${assignmentId}:`, error);
       setSelectedQuizCompletionStatus(false);
@@ -171,7 +180,6 @@ const Quizzes: React.FC = () => {
     const hasQuizzes = quizzes.length > 0;
     
     if (lastCall && now - parseInt(lastCall) < 3000 && hasQuizzes) {
-      console.log('Rate limiting: using cached data');
       setLoading(false);
       return; // Wait at least 3 seconds between calls if data exists
     }
@@ -184,8 +192,9 @@ const Quizzes: React.FC = () => {
           limit: rowsPerPage,
           search: searchTerm
         });
-        console.log('Student assigned quizzes response:', response.data);
         const assignmentData = response.data.data.assignments || [];
+        const pagination = response.data.data.pagination;
+        setTotal(pagination?.total || 0);
         const quizzesWithAssignment = assignmentData
           .filter((assignment: any) => assignment && assignment.quizId)
           .map((assignment: any) => ({
@@ -196,7 +205,6 @@ const Quizzes: React.FC = () => {
               assignmentId: assignment._id
             }
           }));
-        console.log('Mapped quizzes with assignment info for student:', quizzesWithAssignment);
         setQuizzes(quizzesWithAssignment);
         
         // Check completion status for all assignments (async in background, non-blocking)
@@ -258,7 +266,8 @@ const Quizzes: React.FC = () => {
           limit: rowsPerPage,
           search: searchTerm
         });
-        console.log('Teacher quizzes response:', response.data);
+        const pagination = response.data.data.pagination;
+        setTotal(pagination?.total || response.data.data.quizzes?.length || 0);
         setQuizzes(response.data.data.quizzes || []);
       }
     } catch (error: any) {
@@ -397,6 +406,9 @@ const Quizzes: React.FC = () => {
       questions: quiz.questions || []
     });
     setEditingQuiz(quiz);
+    setQuestionSearchTerm('');
+    setQuestionFilterSubject('');
+    setQuestionFilterDifficulty('');
     setOpenDialog(true);
   };
 
@@ -413,14 +425,40 @@ const Quizzes: React.FC = () => {
   };
 
   const handleViewDetails = async (quiz: QuizWithAssignment) => {
-    console.log('Opening quiz details for:', quiz._id, quiz.title, 'assignment:', quiz.assignmentInfo?.assignmentId);
     setSelectedQuiz(quiz);
     setViewDialogOpen(true);
     // Reset completion status first
     setSelectedQuizCompletionStatus(false);
-    console.log('Reset completion status to false for quiz:', quiz._id);
     // Wait for completion check to finish
     await checkSelectedQuizCompletion(quiz._id, quiz.assignmentInfo?.assignmentId);
+    
+    // Load assignments for this quiz if teacher
+    if (user?.role === 'teacher') {
+      setLoadingAssignments(true);
+      setQuizAssignments([]); // Reset trước
+      try {
+        const response = await quizAPI.getAssignments({ 
+          page: 1, 
+          limit: 100 
+        });
+        const allAssignments = response.data.data.assignments || [];
+        // Filter assignments for this specific quiz
+        const assignments = allAssignments.filter((assignment: any) => {
+          if (!assignment || !assignment.quizId || !quiz?._id) return false;
+          // Handle both cases: quizId as object or string
+          const assignmentQuizId = assignment.quizId._id || assignment.quizId;
+          const quizIdStr = String(assignmentQuizId);
+          const currentQuizIdStr = String(quiz._id);
+          return quizIdStr === currentQuizIdStr;
+        });
+        setQuizAssignments(assignments);
+      } catch (error: any) {
+        console.error('Error loading assignments:', error);
+        setError('Không thể tải danh sách bài đã giao: ' + (error.message || 'Lỗi không xác định'));
+      } finally {
+        setLoadingAssignments(false);
+      }
+    }
   };
 
   const handleAssignQuiz = (quiz: Quiz) => {
@@ -460,12 +498,6 @@ const Quizzes: React.FC = () => {
         return;
       }
       
-      console.log('Submitting assignment:', {
-        quizId: selectedQuiz._id,
-        assignedTo: emails,
-        dueDate: dueDateTime.toISOString()
-      });
-      
       await quizAPI.assignQuiz({
         quizId: selectedQuiz._id,
         assignedTo: emails,
@@ -479,6 +511,29 @@ const Quizzes: React.FC = () => {
         dueDate: '',
         dueTime: '23:59'
       });
+      
+      // Reload assignments if viewing quiz details
+      if (selectedQuiz && user?.role === 'teacher' && viewDialogOpen) {
+        try {
+          const response = await quizAPI.getAssignments({ 
+            page: 1, 
+            limit: 100 
+          });
+          const assignments = (response.data.data.assignments || []).filter((assignment: any) => {
+            if (!assignment || !assignment.quizId || !selectedQuiz?._id) return false;
+            const assignmentQuizId = assignment.quizId._id || assignment.quizId;
+            const quizIdStr = typeof assignmentQuizId === 'string' ? assignmentQuizId : String(assignmentQuizId);
+            const currentQuizIdStr = String(selectedQuiz._id);
+            return quizIdStr === currentQuizIdStr;
+          });
+          setQuizAssignments(assignments);
+        } catch (error) {
+          console.error('Error reloading assignments:', error);
+        }
+      }
+      
+      // Refresh quiz list
+      fetchQuizzes();
       } catch (error: any) {
       console.error('Error assigning quiz:', error);
       const errorMessage = error.response?.data?.message || 'Không thể giao bài';
@@ -510,7 +565,43 @@ const Quizzes: React.FC = () => {
     }
   };
 
-  const subjects = Array.from(new Set(quizzes.filter(q => q && q.subject).map(q => q.subject)));
+  const getDifficultyColor = (difficulty: string): 'default' | 'primary' | 'secondary' | 'error' | 'info' | 'success' | 'warning' => {
+    switch (difficulty) {
+      case 'easy': return 'success';
+      case 'medium': return 'warning';
+      case 'hard': return 'error';
+      default: return 'default';
+    }
+  };
+
+  const subjects = useMemo(() => 
+    Array.from(new Set(quizzes.filter(q => q && q.subject).map(q => q.subject))),
+    [quizzes]
+  );
+
+  // Memoize filtered questions for dialog
+  const filteredQuestions = useMemo(() => {
+    return availableQuestions.filter(q => {
+      if (!q) return false;
+      
+      // Filter theo search term
+      if (questionSearchTerm && !q.text.toLowerCase().includes(questionSearchTerm.toLowerCase())) {
+        return false;
+      }
+      
+      // Filter theo subject
+      if (questionFilterSubject && q.subject !== questionFilterSubject) {
+        return false;
+      }
+      
+      // Filter theo difficulty
+      if (questionFilterDifficulty && q.difficulty !== questionFilterDifficulty) {
+        return false;
+      }
+      
+      return true;
+    });
+  }, [availableQuestions, questionSearchTerm, questionFilterSubject, questionFilterDifficulty]);
 
   const getActiveCount = (): number => {
     if (user?.role === 'student') {
@@ -522,18 +613,29 @@ const Quizzes: React.FC = () => {
 
   return (
     <Box sx={{ minHeight: '100vh', bgcolor: 'grey.50' }}>
-      <Container maxWidth="xl" sx={{ py: 4 }}>
+      <Container maxWidth="xl" sx={{ py: { xs: 2, sm: 3, md: 4 }, px: { xs: 2, sm: 3 } }}>
         {/* Header */}
-        <Box sx={{ mb: 4 }}>
-          <Typography variant="h3" gutterBottom fontWeight="bold" sx={{ 
-            background: `linear-gradient(45deg, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`,
-            backgroundClip: 'text',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent'
-          }}>
+        <Box sx={{ mb: { xs: 3, md: 4 } }}>
+          <Typography 
+            variant="h3" 
+            gutterBottom 
+            fontWeight="bold" 
+            sx={{ 
+              fontSize: { xs: '1.75rem', sm: '2rem', md: '2.5rem' },
+              background: `linear-gradient(45deg, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`,
+              backgroundClip: 'text',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent'
+            }}
+          >
             {user?.role === 'student' ? 'Danh sách bài thi' : 'Quản lý bài thi'}
-        </Typography>
-          <Typography variant="h6" color="text.secondary" gutterBottom>
+          </Typography>
+          <Typography 
+            variant="h6" 
+            color="text.secondary" 
+            gutterBottom
+            sx={{ fontSize: { xs: '0.875rem', sm: '1rem', md: '1.25rem' } }}
+          >
             {user?.role === 'student' ? 'Xem và làm các bài thi trắc nghiệm' : 'Tạo và quản lý các bài thi trắc nghiệm'}
           </Typography>
         </Box>
@@ -541,20 +643,24 @@ const Quizzes: React.FC = () => {
         {/* Stats Cards */}
         <Box sx={{ 
           display: 'grid', 
-          gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', 
-          gap: 3, 
-          mb: 4 
+          gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)' },
+          gap: { xs: 2, sm: 3 }, 
+          mb: { xs: 3, md: 4 },
+          justifyContent: 'stretch'
         }}>
           <Card sx={{ 
             background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark} 100%)`,
             color: 'white',
             position: 'relative',
-            overflow: 'hidden'
+            overflow: 'hidden',
+            height: '100%',
+            display: 'flex',
+            flexDirection: 'column'
           }}>
             <Box sx={{ position: 'absolute', top: 0, right: 0, opacity: 0.1 }}>
               <QuizIcon sx={{ fontSize: 100 }} />
             </Box>
-            <CardContent>
+            <CardContent sx={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
               <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
                 <Avatar sx={{ bgcolor: 'rgba(255,255,255,0.2)', mr: 2 }}>
                   <QuizIcon />
@@ -583,12 +689,15 @@ const Quizzes: React.FC = () => {
             background: `linear-gradient(135deg, ${theme.palette.success.main} 0%, ${theme.palette.success.dark} 100%)`,
             color: 'white',
             position: 'relative',
-            overflow: 'hidden'
+            overflow: 'hidden',
+            height: '100%',
+            display: 'flex',
+            flexDirection: 'column'
           }}>
             <Box sx={{ position: 'absolute', top: 0, right: 0, opacity: 0.1 }}>
               <CheckCircleIcon sx={{ fontSize: 100 }} />
             </Box>
-            <CardContent>
+            <CardContent sx={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
               <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
                 <Avatar sx={{ bgcolor: 'rgba(255,255,255,0.2)', mr: 2 }}>
                   <CheckCircleIcon />
@@ -599,7 +708,7 @@ const Quizzes: React.FC = () => {
                   </Typography>
                   <Typography variant="body2" sx={{ opacity: 0.9 }}>
                     Đang hoạt động
-        </Typography>
+                  </Typography>
                 </Box>
               </Box>
               <LinearProgress 
@@ -622,8 +731,8 @@ const Quizzes: React.FC = () => {
           <CardContent>
             <Box sx={{ 
               display: 'grid', 
-              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
-              gap: 2 
+              gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)' },
+              gap: { xs: 1.5, sm: 2 }
             }}>
               <TextField
                 fullWidth
@@ -640,20 +749,6 @@ const Quizzes: React.FC = () => {
                 }}
                 sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
               />
-          <Button
-                variant="outlined"
-                onClick={() => {
-                  // Clear rate limiting and force refresh
-                  localStorage.removeItem('lastApiCall');
-                  setQuizzes([]); // Clear current data
-                  fetchQuizzes();
-                  loadAvailableQuestions();
-                }}
-                sx={{ ml: 1, borderRadius: 2 }}
-                disabled={loading}
-              >
-                {loading ? '⏳ Đang tải...' : '🔄 Làm mới'}
-          </Button>
               <FormControl fullWidth>
                 <InputLabel>Môn học</InputLabel>
                 <Select
@@ -676,14 +771,20 @@ const Quizzes: React.FC = () => {
               >
                 Bộ lọc
               </Button>
-          <Button
-                variant="outlined"
-                startIcon={<SortIcon />}
-                onClick={() => {/* Handle sort */}}
-                sx={{ borderRadius: 2 }}
+              <Button
+                variant="contained"
+                startIcon={<UploadFileIcon />}
+                onClick={() => setImportDialogOpen(true)}
+                sx={{ 
+                  borderRadius: 2,
+                  background: `linear-gradient(45deg, ${theme.palette.success.main}, ${theme.palette.success.dark})`,
+                  '&:hover': {
+                    background: `linear-gradient(45deg, ${theme.palette.success.dark}, ${theme.palette.success.main})`,
+                  }
+                }}
               >
-                Sắp xếp
-          </Button>
+                Import Excel
+              </Button>
       </Box>
           </CardContent>
         </Card>
@@ -886,7 +987,7 @@ const Quizzes: React.FC = () => {
             <TablePagination
               rowsPerPageOptions={[5, 10, 25, 50]}
               component="div"
-              count={quizzes.length}
+              count={total}
               rowsPerPage={rowsPerPage}
               page={page}
               onPageChange={(_, newPage) => setPage(newPage)}
@@ -899,7 +1000,17 @@ const Quizzes: React.FC = () => {
             </Card>
 
         {/* Create Quiz Dialog */}
-        <Dialog open={openDialog} onClose={() => setOpenDialog(false)} maxWidth="md" fullWidth>
+        <Dialog 
+          open={openDialog} 
+          onClose={() => {
+            setOpenDialog(false);
+            setQuestionSearchTerm('');
+            setQuestionFilterSubject('');
+            setQuestionFilterDifficulty('');
+          }} 
+          maxWidth="md" 
+          fullWidth
+        >
           <DialogTitle sx={{ 
             background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark} 100%)`,
             color: 'white',
@@ -974,6 +1085,48 @@ const Quizzes: React.FC = () => {
                     Chọn các câu hỏi từ danh sách có sẵn để tạo bài thi
                   </Typography>
                   
+                  {/* Bộ lọc câu hỏi */}
+                  <Box sx={{ mb: 2, display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, gap: { xs: 1.5, sm: 2 }, flexWrap: 'wrap' }}>
+                    <TextField
+                      placeholder="Tìm kiếm câu hỏi..."
+                      size="small"
+                      value={questionSearchTerm}
+                      onChange={(e) => setQuestionSearchTerm(e.target.value)}
+                      InputProps={{
+                        startAdornment: <SearchIcon sx={{ color: 'text.secondary', mr: 1 }} />
+                      }}
+                      sx={{ flex: { xs: '1 1 100%', sm: 1 }, minWidth: { xs: '100%', sm: 200 }, '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                    />
+                    <FormControl size="small" sx={{ minWidth: 150 }}>
+                      <InputLabel>Môn học</InputLabel>
+                      <Select
+                        value={questionFilterSubject}
+                        onChange={(e) => setQuestionFilterSubject(e.target.value)}
+                        label="Môn học"
+                        sx={{ borderRadius: 2 }}
+                      >
+                        <MenuItem value="">Tất cả</MenuItem>
+                        {Array.from(new Set(availableQuestions.map(q => q.subject))).map(subject => (
+                          <MenuItem key={subject} value={subject}>{subject}</MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                    <FormControl size="small" sx={{ minWidth: 150 }}>
+                      <InputLabel>Độ khó</InputLabel>
+                      <Select
+                        value={questionFilterDifficulty}
+                        onChange={(e) => setQuestionFilterDifficulty(e.target.value)}
+                        label="Độ khó"
+                        sx={{ borderRadius: 2 }}
+                      >
+                        <MenuItem value="">Tất cả</MenuItem>
+                        <MenuItem value="easy">Dễ</MenuItem>
+                        <MenuItem value="medium">Trung bình</MenuItem>
+                        <MenuItem value="hard">Khó</MenuItem>
+                      </Select>
+                    </FormControl>
+                  </Box>
+                  
                   {/* Danh sách câu hỏi có sẵn */}
                   <Box sx={{ 
                     border: '1px solid', 
@@ -1005,9 +1158,15 @@ const Quizzes: React.FC = () => {
                           Tạo câu hỏi
                         </Button>
                       </Box>
-                    ) : (
-                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                        {availableQuestions.filter(q => q).map((question) => (
+                    ) : filteredQuestions.length === 0 ? (
+                        <Box sx={{ textAlign: 'center', py: 4 }}>
+                          <Typography variant="body2" color="text.secondary">
+                            Không tìm thấy câu hỏi nào phù hợp với bộ lọc
+                          </Typography>
+                        </Box>
+                      ) : (
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                          {filteredQuestions.map((question) => (
                           <Box 
                             key={question._id}
                             sx={{ 
@@ -1056,9 +1215,9 @@ const Quizzes: React.FC = () => {
                               </Box>
                             </Box>
                           </Box>
-                        ))}
-                      </Box>
-                    )}
+                          ))}
+                        </Box>
+                      )}
                   </Box>
                   
                   {formData.questions.length > 0 && (
@@ -1073,7 +1232,15 @@ const Quizzes: React.FC = () => {
               </Box>
             </DialogContent>
             <DialogActions sx={{ p: 3 }}>
-              <Button onClick={() => setOpenDialog(false)} sx={{ borderRadius: 2 }}>
+              <Button 
+                onClick={() => {
+                  setOpenDialog(false);
+                  setQuestionSearchTerm('');
+                  setQuestionFilterSubject('');
+                  setQuestionFilterDifficulty('');
+                }} 
+                sx={{ borderRadius: 2 }}
+              >
                 Hủy
               </Button>
               <Button 
@@ -1098,7 +1265,12 @@ const Quizzes: React.FC = () => {
           <Fab
             color="primary"
             aria-label="Tạo bài thi mới"
-            onClick={() => setOpenDialog(true)}
+            onClick={() => {
+              setQuestionSearchTerm('');
+              setQuestionFilterSubject('');
+              setQuestionFilterDifficulty('');
+              setOpenDialog(true);
+            }}
             sx={{
               position: 'fixed',
               bottom: 24,
@@ -1120,6 +1292,8 @@ const Quizzes: React.FC = () => {
             setViewDialogOpen(false);
             setSelectedQuizCompletionStatus(false);
             setSelectedQuiz(null);
+            setQuizAssignments([]);
+            setExpandedAssignments({});
           }}
           maxWidth="md"
           fullWidth
@@ -1186,6 +1360,111 @@ const Quizzes: React.FC = () => {
 
                 <Divider sx={{ my: 2 }} />
 
+                {/* Bài đã giao - chỉ hiển thị cho giáo viên - ĐẶT LÊN TRƯỚC */}
+                {user?.role === 'teacher' && (
+                  <>
+                    <Typography variant="h6" fontWeight="bold" sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <AssignmentIcon color="primary" />
+                      Bài đã giao
+                    </Typography>
+                    {loadingAssignments ? (
+                      <Box sx={{ textAlign: 'center', py: 2 }}>
+                        <CircularProgress size={24} />
+                      </Box>
+                    ) : quizAssignments.length > 0 ? (
+                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mb: 3 }}>
+                        {quizAssignments.map((assignment: any, index: number) => (
+                          <Card key={index} sx={{ p: 2, bgcolor: 'grey.50' }}>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1.5 }}>
+                              <Box>
+                                <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
+                                  Ngày giao: {new Date(assignment.createdAt).toLocaleDateString('vi-VN', {
+                                    day: '2-digit',
+                                    month: '2-digit',
+                                    year: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit'
+                                  })}
+                                </Typography>
+                                <Typography variant="body2" color="text.secondary">
+                                  Hạn nộp: {new Date(assignment.dueDate).toLocaleDateString('vi-VN', {
+                                    day: '2-digit',
+                                    month: '2-digit',
+                                    year: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit'
+                                  })}
+                                </Typography>
+                              </Box>
+                              <Chip 
+                                label={new Date(assignment.dueDate).getTime() > Date.now() ? 'Còn hạn' : 'Hết hạn'}
+                                size="small"
+                                color={new Date(assignment.dueDate).getTime() > Date.now() ? 'success' : 'error'}
+                                variant="outlined"
+                              />
+                            </Box>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                              <PeopleIcon fontSize="small" color="primary" />
+                              <Typography variant="body2" fontWeight="medium">
+                                Đã giao cho {Array.isArray(assignment.assignedTo) ? assignment.assignedTo.length : 0} sinh viên:
+                              </Typography>
+                            </Box>
+                            {(() => {
+                              const emails = Array.isArray(assignment.assignedTo) ? assignment.assignedTo : [];
+                              const isExpanded = expandedAssignments[index] || false;
+                              const maxVisible = 5; // Hiển thị tối đa 5 email
+                              const visibleEmails = isExpanded ? emails : emails.slice(0, maxVisible);
+                              const hasMore = emails.length > maxVisible;
+                              
+                              return (
+                                <>
+                                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                                    {visibleEmails.map((email: string, idx: number) => (
+                                      <Chip 
+                                        key={idx}
+                                        label={email}
+                                        size="small"
+                                        variant="outlined"
+                                        sx={{ fontSize: '0.75rem' }}
+                                      />
+                                    ))}
+                                  </Box>
+                                  {hasMore && !isExpanded && (
+                                    <Button
+                                      size="small"
+                                      onClick={() => setExpandedAssignments(prev => ({ ...prev, [index]: true }))}
+                                      sx={{ mt: 1, fontSize: '0.75rem' }}
+                                    >
+                                      Xem thêm {emails.length - maxVisible} sinh viên...
+                                    </Button>
+                                  )}
+                                  {hasMore && isExpanded && (
+                                    <Button
+                                      size="small"
+                                      onClick={() => setExpandedAssignments(prev => ({ ...prev, [index]: false }))}
+                                      sx={{ mt: 1, fontSize: '0.75rem' }}
+                                    >
+                                      Thu gọn
+                                    </Button>
+                                  )}
+                                </>
+                              );
+                            })()}
+                          </Card>
+                        ))}
+                      </Box>
+                    ) : (
+                      <Box sx={{ textAlign: 'center', py: 3, bgcolor: 'grey.50', borderRadius: 2, mb: 3 }}>
+                        <AssignmentIcon sx={{ fontSize: 48, color: 'text.secondary', mb: 1 }} />
+                        <Typography variant="body2" color="text.secondary">
+                          Chưa giao bài cho sinh viên nào
+                        </Typography>
+                      </Box>
+                    )}
+                    <Divider sx={{ my: 3 }} />
+                  </>
+                )}
+
                 {user?.role !== 'student' ? (
                   <>
                     <Typography variant="h6" fontWeight="bold" sx={{ mb: 2 }}>
@@ -1211,23 +1490,36 @@ const Quizzes: React.FC = () => {
                                 }}>
                                   {index + 1}
                                 </Box>
-                                <Box sx={{ flex: 1 }}>
+                                <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
                                   <Typography variant="body1" sx={{ mb: 1 }}>
                                     {question?.text || 'Câu hỏi không tìm thấy'}
                                   </Typography>
                                   {question && (
-                                    <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                                      <Chip 
-                                        label={question.subject} 
-                                        size="small" 
-                                        variant="outlined"
-                                      />
-                                      <Chip 
-                                        label={getDifficultyLabel(question.difficulty)} 
-                                        size="small" 
-                                        color="secondary"
-            variant="outlined"
-                                      />
+                                    <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
+                                      <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                                        <Chip 
+                                          label={question.subject} 
+                                          size="small" 
+                                          variant="outlined"
+                                        />
+                                        <Chip 
+                                          label={getDifficultyLabel(question.difficulty)} 
+                                          size="small" 
+                                          color="secondary"
+                                          variant="outlined"
+                                        />
+                                      </Box>
+                                      <IconButton
+                                        size="small"
+                                        onClick={() => {
+                                          setSelectedQuestion(question);
+                                          setQuestionViewDialogOpen(true);
+                                        }}
+                                        color="primary"
+                                        sx={{ flexShrink: 0 }}
+                                      >
+                                        <VisibilityIcon />
+                                      </IconButton>
                                     </Box>
                                   )}
                                 </Box>
@@ -1245,7 +1537,9 @@ const Quizzes: React.FC = () => {
                       </Box>
                     )}
                   </>
-                ) : (
+                ) : null}
+
+                {user?.role === 'student' ? (
                   <Box sx={{ textAlign: 'center', py: 4 }}>
                     {(() => {
                       const effectiveStatus = getEffectiveStatus(selectedQuiz, user?.role);
@@ -1330,7 +1624,7 @@ const Quizzes: React.FC = () => {
                       }
                     })()}
                   </Box>
-                )}
+                ) : null}
               </Box>
             )}
         </DialogContent>
@@ -1344,6 +1638,121 @@ const Quizzes: React.FC = () => {
           </Button>
         </DialogActions>
       </Dialog>
+
+        {/* Question Detail Dialog */}
+        <Dialog 
+          open={questionViewDialogOpen} 
+          onClose={() => {
+            setQuestionViewDialogOpen(false);
+            setSelectedQuestion(null);
+          }}
+          maxWidth="md"
+          fullWidth
+        >
+          <DialogTitle sx={{ 
+            background: `linear-gradient(45deg, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`,
+            color: 'white',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1
+          }}>
+            <QuestionAnswerIcon />
+            Chi tiết câu hỏi
+          </DialogTitle>
+          <DialogContent sx={{ p: 3 }}>
+            {selectedQuestion && (
+              <Box>
+                <Box sx={{ mb: 3 }}>
+                  <Typography variant="h6" fontWeight="bold" sx={{ mb: 2 }}>
+                    {selectedQuestion.text}
+                  </Typography>
+                  <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mb: 3 }}>
+                    <Chip 
+                      label={selectedQuestion.subject} 
+                      color="primary" 
+                      variant="outlined"
+                    />
+                    <Chip 
+                      label={getDifficultyLabel(selectedQuestion.difficulty)}
+                      color={getDifficultyColor(selectedQuestion.difficulty)}
+                      variant="outlined"
+                    />
+                  </Box>
+                </Box>
+
+                <Divider sx={{ my: 2 }} />
+
+                <Typography variant="h6" fontWeight="bold" sx={{ mb: 2 }}>
+                  Các lựa chọn
+                </Typography>
+                <Box>
+                  {selectedQuestion.options.map((option, index) => (
+                    <Card 
+                      key={index} 
+                      sx={{ 
+                        mb: 2, 
+                        p: 2,
+                        border: selectedQuestion.correctAnswer === index ? 2 : 1,
+                        borderColor: selectedQuestion.correctAnswer === index ? 'success.main' : 'divider',
+                        background: selectedQuestion.correctAnswer === index ? 'success.light' : 'background.paper',
+                        transition: 'all 0.2s ease-in-out',
+                        '&:hover': {
+                          boxShadow: 2
+                        }
+                      }}
+                    >
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                        <Avatar 
+                          sx={{ 
+                            width: 48, 
+                            height: 48,
+                            bgcolor: selectedQuestion.correctAnswer === index ? 'success.main' : 'grey.300',
+                            color: selectedQuestion.correctAnswer === index ? 'white' : 'text.primary',
+                            fontWeight: 'bold',
+                            fontSize: '20px',
+                            flexShrink: 0,
+                            flex: '0 0 48px',
+                            boxShadow: selectedQuestion.correctAnswer === index ? 2 : 0
+                          }}
+                        >
+                          {String.fromCharCode(65 + index)}
+                        </Avatar>
+                        <Typography 
+                          variant="body1" 
+                          sx={{ 
+                            flex: 1, 
+                            fontWeight: selectedQuestion.correctAnswer === index ? 'bold' : 'normal',
+                            fontFamily: 'inherit',
+                            fontSize: '16px'
+                          }}
+                        >
+                          {option}
+                        </Typography>
+                        {selectedQuestion.correctAnswer === index && (
+                          <Chip 
+                            label="Đáp án đúng" 
+                            color="success" 
+                            size="small"
+                            icon={<CheckCircleIcon />}
+                            sx={{ fontWeight: 'bold' }}
+                          />
+                        )}
+                      </Box>
+                    </Card>
+                  ))}
+                </Box>
+              </Box>
+            )}
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => {
+              setQuestionViewDialogOpen(false);
+              setSelectedQuestion(null);
+            }}>
+              Đóng
+            </Button>
+          </DialogActions>
+        </Dialog>
 
         {/* Assignment Dialog */}
         <Dialog 
@@ -1460,6 +1869,182 @@ const Quizzes: React.FC = () => {
               </form>
             )}
           </DialogContent>
+        </Dialog>
+
+        {/* Import Excel Dialog */}
+        <Dialog 
+          open={importDialogOpen} 
+          onClose={() => {
+            setImportDialogOpen(false);
+            setImportFile(null);
+          }} 
+          maxWidth="sm" 
+          fullWidth
+        >
+          <DialogTitle sx={{ 
+            background: `linear-gradient(135deg, ${theme.palette.success.main} 0%, ${theme.palette.success.dark} 100%)`,
+            color: 'white',
+            display: 'flex',
+            alignItems: 'center'
+          }}>
+            <UploadFileIcon sx={{ mr: 1 }} />
+            Import Câu hỏi và Bài thi từ Excel
+          </DialogTitle>
+          <DialogContent sx={{ pt: 3 }}>
+            <Box sx={{ mb: 3 }}>
+              <Alert severity="info" sx={{ mb: 2 }}>
+                <Typography variant="subtitle2" fontWeight="bold" gutterBottom>
+                  File Excel cần có 2 sheet: "Câu hỏi" và "Bài thi"
+                </Typography>
+              </Alert>
+              
+              <Box sx={{ mb: 3, p: 2, bgcolor: 'grey.50', borderRadius: 2 }}>
+                <Typography variant="subtitle2" fontWeight="bold" gutterBottom color="primary">
+                  📋 SHEET "Câu hỏi"
+                </Typography>
+                <Box component="ul" sx={{ m: 0, pl: 3, fontSize: '0.875rem', mb: 2 }}>
+                  <li><strong>STT</strong>: Số thứ tự (1, 2, 3, ...) - dùng để tham chiếu ở sheet "Bài thi"</li>
+                  <li><strong>Nội dung câu hỏi</strong> (bắt buộc)</li>
+                  <li><strong>Đáp án A, B, C, D</strong></li>
+                  <li><strong>Đáp án đúng</strong>: A, B, C, hoặc D</li>
+                  <li><strong>Môn học</strong> (bắt buộc)</li>
+                  <li><strong>Độ khó</strong>: Dễ, Trung bình, hoặc Khó (bắt buộc)</li>
+                </Box>
+                
+                <Typography variant="subtitle2" fontWeight="bold" gutterBottom color="primary" sx={{ mt: 2 }}>
+                  📝 SHEET "Bài thi"
+                </Typography>
+                <Box component="ul" sx={{ m: 0, pl: 3, fontSize: '0.875rem' }}>
+                  <li><strong>Tiêu đề bài thi</strong> (bắt buộc)</li>
+                  <li><strong>Mô tả</strong> (tùy chọn)</li>
+                  <li><strong>Môn học</strong> (bắt buộc)</li>
+                  <li><strong>Thời gian (phút)</strong> (bắt buộc)</li>
+                  <li><strong>Danh sách câu hỏi (STT)</strong>: Nhập STT của các câu hỏi (từ cột STT trong sheet "Câu hỏi"), phân cách bằng dấu phẩy</li>
+                </Box>
+                
+                <Alert severity="success" sx={{ mt: 2 }}>
+                  <Typography variant="caption" component="div">
+                    <strong>💡 Ví dụ:</strong> Trong sheet "Câu hỏi" có STT 1, 2, 3. Ở sheet "Bài thi", cột "Danh sách câu hỏi (STT)" nhập: <strong>1,2,3</strong> để chọn cả 3 câu hỏi đó.
+                  </Typography>
+                </Alert>
+              </Box>
+              <Button
+                variant="outlined"
+                fullWidth
+                startIcon={<FileDownloadIcon />}
+                onClick={async () => {
+                  try {
+                    const blob = await importAPI.downloadTemplate();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'Mau_Import_CauHoi_Va_BaiThi.xlsx';
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                    setSuccess('Đã tải file mẫu thành công!');
+                  } catch (error: any) {
+                    setError('Không thể tải file mẫu: ' + (error.message || 'Lỗi không xác định'));
+                  }
+                }}
+                sx={{ mb: 2, borderRadius: 2 }}
+              >
+                Tải file mẫu Excel
+              </Button>
+              <input
+                accept=".xlsx,.xls"
+                style={{ display: 'none' }}
+                id="excel-file-upload"
+                type="file"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
+                      setError('Chỉ chấp nhận file Excel (.xlsx, .xls)');
+                      return;
+                    }
+                    setImportFile(file);
+                  }
+                }}
+              />
+              <label htmlFor="excel-file-upload">
+                <Button
+                  variant="outlined"
+                  component="span"
+                  fullWidth
+                  startIcon={<UploadFileIcon />}
+                  sx={{ borderRadius: 2 }}
+                >
+                  {importFile ? importFile.name : 'Chọn file Excel'}
+                </Button>
+              </label>
+              {importFile && (
+                <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                  Đã chọn: {importFile.name} ({(importFile.size / 1024).toFixed(2)} KB)
+                </Typography>
+              )}
+            </Box>
+          </DialogContent>
+          <DialogActions sx={{ p: 3 }}>
+            <Button 
+              onClick={() => {
+                setImportDialogOpen(false);
+                setImportFile(null);
+              }}
+              sx={{ borderRadius: 2 }}
+            >
+              Hủy
+            </Button>
+            <Button
+              variant="contained"
+              onClick={async () => {
+                if (!importFile) {
+                  setError('Vui lòng chọn file Excel');
+                  return;
+                }
+                try {
+                  setImporting(true);
+                  setError('');
+                  const result = await importAPI.importExcel(importFile);
+                  
+                  let message = result.message || `Import thành công: ${result.data?.questionsCreated || 0} câu hỏi, ${result.data?.quizzesCreated || 0} bài thi`;
+                  
+                  if (result.data?.errors && result.data.errors.length > 0) {
+                    message += `\n\nLưu ý: ${result.data.errors.length} lỗi:\n${result.data.errors.slice(0, 5).join('\n')}`;
+                    if (result.data.errors.length > 5) {
+                      message += `\n... và ${result.data.errors.length - 5} lỗi khác`;
+                    }
+                  }
+                  
+                  setSuccess(message);
+                  setImportDialogOpen(false);
+                  setImportFile(null);
+                  
+                  // Refresh danh sách
+                  setTimeout(() => {
+                    fetchQuizzes();
+                    loadAvailableQuestions();
+                  }, 1000);
+                } catch (error: any) {
+                  setError(error.message || 'Import thất bại');
+                } finally {
+                  setImporting(false);
+                }
+              }}
+              disabled={!importFile || importing}
+              startIcon={importing ? <CircularProgress size={20} /> : <UploadFileIcon />}
+              sx={{ 
+                borderRadius: 2,
+                background: `linear-gradient(45deg, ${theme.palette.success.main}, ${theme.palette.success.dark})`,
+                '&:hover': {
+                  background: `linear-gradient(45deg, ${theme.palette.success.dark}, ${theme.palette.success.main})`,
+                }
+              }}
+            >
+              {importing ? 'Đang import...' : 'Import'}
+            </Button>
+          </DialogActions>
         </Dialog>
 
         {/* Snackbars */}

@@ -29,7 +29,7 @@ import {
   Book as BookIcon
 } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
-import { userAPI } from '../services/api';
+import { userAPI, authAPI } from '../services/api';
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -77,8 +77,11 @@ const Profile: React.FC = () => {
   const [passwordData, setPasswordData] = useState({
     currentPassword: '',
     newPassword: '',
-    confirmPassword: ''
+    confirmPassword: '',
+    otp: ''
   });
+  const [otpStep, setOtpStep] = useState<'form' | 'otp'>('form');
+  const [otpSent, setOtpSent] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -165,21 +168,72 @@ const Profile: React.FC = () => {
     }
   };
 
-  const handlePasswordSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleRequestOtp = async () => {
+    if (!passwordData.currentPassword || !passwordData.newPassword || !passwordData.confirmPassword) {
+      setError('Vui lòng nhập đầy đủ thông tin');
+      return;
+    }
+
     if (passwordData.newPassword !== passwordData.confirmPassword) {
       setError('Mật khẩu xác nhận không khớp');
       return;
     }
+
+    if (passwordData.newPassword.length < 8) {
+      setError('Mật khẩu mới phải có ít nhất 8 ký tự');
+      return;
+    }
+
     try {
       setLoading(true);
-      // Update password - this would need to be implemented in the API
-      setSuccess('Cập nhật mật khẩu thành công');
+      setError(null);
+      await authAPI.requestChangePasswordOtp();
+      setSuccess('Đã gửi mã OTP tới email của bạn. Vui lòng kiểm tra hộp thư.');
+      setOtpSent(true);
+      setOtpStep('otp');
+      setPasswordData(prev => ({ ...prev, otp: '' }));
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'Không thể gửi mã OTP');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!passwordData.currentPassword || !passwordData.newPassword || !passwordData.confirmPassword) {
+      setError('Vui lòng nhập đầy đủ thông tin');
+      return;
+    }
+
+    if (passwordData.newPassword !== passwordData.confirmPassword) {
+      setError('Mật khẩu xác nhận không khớp');
+      return;
+    }
+
+    if (!passwordData.otp) {
+      setError('Vui lòng nhập mã OTP');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+      await authAPI.changePasswordWithOtp({
+        currentPassword: passwordData.currentPassword,
+        otp: passwordData.otp,
+        newPassword: passwordData.newPassword
+      });
+      setSuccess('Đổi mật khẩu thành công!');
       setPasswordData({
         currentPassword: '',
         newPassword: '',
-        confirmPassword: ''
+        confirmPassword: '',
+        otp: ''
       });
+      setOtpStep('form');
+      setOtpSent(false);
     } catch (err: any) {
       setError(err.response?.data?.message || 'Có lỗi xảy ra');
     } finally {
@@ -483,6 +537,7 @@ const Profile: React.FC = () => {
                     value={passwordData.newPassword}
                     onChange={handlePasswordChange}
                     required
+                    disabled={otpStep === 'otp'}
                     sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
                   />
                   <TextField
@@ -493,24 +548,74 @@ const Profile: React.FC = () => {
                     value={passwordData.confirmPassword}
                     onChange={handlePasswordChange}
                     required
+                    disabled={otpStep === 'otp'}
                     sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
                   />
                 </Box>
-                <Button
-                  type="submit"
-                  variant="contained"
-                  disabled={loading}
-                  startIcon={loading ? <CircularProgress size={20} /> : <LockIcon />}
-                  sx={{ 
-                    borderRadius: 2,
-                    background: `linear-gradient(45deg, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`,
-                    '&:hover': {
-                      background: `linear-gradient(45deg, ${theme.palette.primary.dark}, ${theme.palette.secondary.dark})`,
-                    }
-                  }}
-                >
-                  Cập nhật mật khẩu
-                </Button>
+                
+                {otpStep === 'form' ? (
+                  <Button
+                    type="button"
+                    variant="contained"
+                    disabled={loading}
+                    onClick={handleRequestOtp}
+                    startIcon={loading ? <CircularProgress size={20} /> : <LockIcon />}
+                    sx={{ 
+                      borderRadius: 2,
+                      background: `linear-gradient(45deg, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`,
+                      '&:hover': {
+                        background: `linear-gradient(45deg, ${theme.palette.primary.dark}, ${theme.palette.secondary.dark})`,
+                      }
+                    }}
+                  >
+                    Gửi mã OTP
+                  </Button>
+                ) : (
+                  <>
+                    <TextField
+                      name="otp"
+                      label="Mã OTP"
+                      type="text"
+                      fullWidth
+                      value={passwordData.otp}
+                      onChange={handlePasswordChange}
+                      required
+                      placeholder="Nhập mã OTP đã gửi tới email của bạn"
+                      sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                      helperText={otpSent ? 'Đã gửi mã OTP tới email của bạn. Vui lòng kiểm tra hộp thư.' : ''}
+                    />
+                    <Box sx={{ display: 'flex', gap: 2 }}>
+                      <Button
+                        type="button"
+                        variant="outlined"
+                        onClick={() => {
+                          setOtpStep('form');
+                          setOtpSent(false);
+                          setPasswordData(prev => ({ ...prev, otp: '' }));
+                        }}
+                        sx={{ borderRadius: 2 }}
+                      >
+                        Hủy
+                      </Button>
+                      <Button
+                        type="submit"
+                        variant="contained"
+                        disabled={loading}
+                        startIcon={loading ? <CircularProgress size={20} /> : <LockIcon />}
+                        sx={{ 
+                          flex: 1,
+                          borderRadius: 2,
+                          background: `linear-gradient(45deg, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`,
+                          '&:hover': {
+                            background: `linear-gradient(45deg, ${theme.palette.primary.dark}, ${theme.palette.secondary.dark})`,
+                          }
+                        }}
+                      >
+                        Xác nhận đổi mật khẩu
+                      </Button>
+                    </Box>
+                  </>
+                )}
               </Box>
             </form>
           </CustomTabPanel>

@@ -1,39 +1,59 @@
-import express from 'express';
+// ============================================
+// FILE: quiz.ts
+// MÔ TẢ: Routes cho quản lý Quiz (Bài thi)
+// CHỨC NĂNG: Định nghĩa các endpoints CRUD cho Quiz
+// ============================================
+
+import express from 'express'; // Express Router
 import {
-  getQuizzes,
-  getQuiz,
-  createQuiz,
-  updateQuiz,
-  deleteQuiz
+  getQuizzes,  // Controller lấy danh sách quizzes
+  getQuiz,     // Controller lấy chi tiết một quiz
+  createQuiz,  // Controller tạo quiz mới
+  updateQuiz,  // Controller cập nhật quiz
+  deleteQuiz   // Controller xóa quiz
 } from '../controllers/quizController';
-import { authenticate, authorize } from '../middleware/auth';
-import { validateQuiz } from '../middleware/validation';
+import { authenticate, authorize } from '../middleware/auth'; // Middleware xác thực và phân quyền
+import { validateQuiz } from '../middleware/validation'; // Middleware validation
 
 const router = express.Router();
 
-// @route   GET /api/quizzes
-// @desc    Get all quizzes
-// @access  Private
+// ============================================
+// PRIVATE ROUTES - Cần đăng nhập
+// ============================================
+
+// Lấy danh sách tất cả quizzes (có pagination, search)
+// Route: GET /api/quizzes
+// Access: Private
+// Middleware: authenticate
+// Note: Teacher chỉ thấy quiz của mình, Admin thấy tất cả, Student không dùng endpoint này
 router.get('/', authenticate, getQuizzes);
 
-// @route   GET /api/quizzes/:id
-// @desc    Get single quiz
-// @access  Private
+// Lấy chi tiết một quiz theo ID
+// Route: GET /api/quizzes/:id
+// Access: Private
+// Middleware: authenticate
 router.get('/:id', authenticate, getQuiz);
 
-// @route   POST /api/quizzes
-// @desc    Create new quiz
-// @access  Private (Teacher/Admin)
+// ============================================
+// TEACHER/ADMIN ROUTES - Chỉ Teacher hoặc Admin
+// ============================================
+
+// Tạo quiz mới
+// Route: POST /api/quizzes
+// Access: Private (Teacher/Admin)
+// Middleware: authenticate + authorize('teacher') + validateQuiz
 router.post('/', authenticate, authorize('teacher'), validateQuiz, createQuiz);
 
-// @route   PUT /api/quizzes/:id
-// @desc    Update quiz
-// @access  Private (Teacher/Admin)
+// Cập nhật quiz
+// Route: PUT /api/quizzes/:id
+// Access: Private (Teacher/Admin)
+// Middleware: authenticate + authorize('teacher') + validateQuiz
 router.put('/:id', authenticate, authorize('teacher'), validateQuiz, updateQuiz);
 
-// @route   DELETE /api/quizzes/:id
-// @desc    Delete quiz
-// @access  Private (Teacher/Admin)
+// Xóa quiz
+// Route: DELETE /api/quizzes/:id
+// Access: Private (Teacher/Admin)
+// Middleware: authenticate + authorize('teacher')
 router.delete('/:id', authenticate, authorize('teacher'), deleteQuiz);
 
 export default router;

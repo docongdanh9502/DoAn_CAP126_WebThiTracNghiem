@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Box, Container, Typography, Card, CardContent, Table, TableHead, TableRow, TableCell, TableBody, Select, MenuItem, FormControl, InputLabel, CircularProgress, Alert, Stack, Chip, TextField, TablePagination, Autocomplete } from '@mui/material';
+import { Box, Typography, Card, CardContent, Table, TableHead, TableRow, TableCell, TableBody, Select, MenuItem, FormControl, InputLabel, CircularProgress, Alert, Stack, Chip, TextField, TablePagination, Autocomplete, Button } from '@mui/material';
+import { FileDownload as FileDownloadIcon } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
 import { quizAPI, quizResultAPI } from '../services/api';
 
@@ -21,6 +22,7 @@ const Results: React.FC = () => {
   const [page, setPage] = useState<number>(0);
   const [rowsPerPage, setRowsPerPage] = useState<number>(10);
   const [total, setTotal] = useState<number>(0);
+  const [exporting, setExporting] = useState(false);
 
   const columns = useMemo(() => ([
     { key: 'studentCode', label: 'MSSV' },
@@ -115,6 +117,50 @@ const Results: React.FC = () => {
     setRows(mapped);
   };
 
+  const handleExportExcel = async () => {
+    if (!selectedQuizId && isTeacher) {
+      setError('Vui lòng chọn bài thi để xuất Excel');
+      return;
+    }
+
+    try {
+      setExporting(true);
+      setError(null);
+      
+      // Compose search params (same as loadForTeacher)
+      const composedSearch = [studentCode, fullName].filter(Boolean).join(' ');
+      const params: any = {
+        search: composedSearch || undefined,
+        className: className || undefined,
+        gender: gender || undefined,
+        minScore: minScore ? Number(minScore) : undefined,
+        maxScore: maxScore ? Number(maxScore) : undefined
+      };
+      
+      // Remove undefined values
+      Object.keys(params).forEach(key => params[key] === undefined && delete params[key]);
+      
+      const blob = await quizResultAPI.exportQuizResultsToExcel(selectedQuizId, params);
+      
+      // Create download link
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const dateStr = new Date().toISOString().split('T')[0].replace(/-/g, '');
+      const quizTitle = quizzes.find((q: any) => q._id === selectedQuizId)?.title || 'KetQua';
+      const filename = `KetQua_${quizTitle.replace(/[^a-zA-Z0-9]/g, '_')}_${dateStr}.xlsx`;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (error: any) {
+      setError('Không thể xuất file Excel: ' + (error.message || 'Lỗi không xác định'));
+    } finally {
+      setExporting(false);
+    }
+  };
+
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -137,10 +183,23 @@ const Results: React.FC = () => {
   }, [isTeacher, selectedQuizId, page, rowsPerPage, className, gender, studentCode, fullName, minScore, maxScore]);
 
   return (
-    <Container maxWidth="lg" sx={{ py: 4 }}>
-      <Card>
-        <CardContent>
-          <Typography variant="h5" fontWeight="bold" sx={{ mb: 2 }}>Kết quả bài thi</Typography>
+    <Box sx={{ width: '100%', py: 4 }}>
+      <Card sx={{ width: '100%', mx: 0 }}>
+        <CardContent sx={{ width: '100%', p: 3 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, flexWrap: 'wrap', gap: 2 }}>
+            <Typography variant="h5" fontWeight="bold">Kết quả bài thi</Typography>
+            {isTeacher && selectedQuizId && (
+              <Button
+                variant="contained"
+                startIcon={<FileDownloadIcon />}
+                onClick={handleExportExcel}
+                disabled={exporting}
+                sx={{ minWidth: 150 }}
+              >
+                {exporting ? 'Đang xuất...' : 'Xuất Excel'}
+              </Button>
+            )}
+          </Box>
 
           {/* Mandatory quiz selector (dropdown) */}
           {(isTeacher || (!isTeacher && quizzes.length > 0)) && (
@@ -183,8 +242,8 @@ const Results: React.FC = () => {
               <CircularProgress />
             </Box>
           ) : (
-            <Box sx={{ overflowX: 'auto' }}>
-              <Table size="small">
+            <Box sx={{ overflowX: 'auto', width: '100%' }}>
+              <Table size="small" sx={{ width: '100%', minWidth: '100%' }}>
                 <TableHead>
                   <TableRow>
                     {columns.map(col => (
@@ -231,7 +290,7 @@ const Results: React.FC = () => {
           )}
         </CardContent>
       </Card>
-    </Container>
+    </Box>
   );
 };
 

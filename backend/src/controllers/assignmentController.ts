@@ -1,9 +1,29 @@
-import { Request, Response } from 'express';
-import Assignment from '../models/Assignment';
-import Quiz from '../models/Quiz';
-import User from '../models/User';
-import { validationResult } from 'express-validator';
+// ============================================
+// FILE: assignmentController.ts
+// MÔ TẢ: Controller xử lý Assignment (Giao bài thi)
+// CHỨC NĂNG: Lấy danh sách bài thi được giao, giao bài thi cho sinh viên, quản lý assignments
+// ============================================
 
+import { Request, Response } from 'express';     // Types từ Express
+import Assignment from '../models/Assignment';  // Model Assignment
+import Quiz from '../models/Quiz';               // Model Quiz
+import User from '../models/User';               // Model User
+import { validationResult } from 'express-validator'; // Validation results
+
+// ============================================
+// GET ASSIGNED QUIZZES - Lấy danh sách bài thi được giao (Student)
+// ============================================
+/**
+ * Lấy danh sách bài thi được giao cho sinh viên hiện tại
+ * Route: GET /api/assignments/assigned-to-me
+ * Access: Private (Student)
+ * 
+ * Features:
+ * - Pagination (page, limit)
+ * - Tìm kiếm theo title của quiz
+ * - Chỉ hiển thị assignments đang active
+ * - Populate thông tin quiz và người giao
+ */
 // Get assignments assigned to current user (student)
 export const getAssignedQuizzes = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -48,6 +68,19 @@ export const getAssignedQuizzes = async (req: Request, res: Response): Promise<v
   }
 };
 
+// ============================================
+// GET ASSIGNMENTS - Lấy danh sách assignments đã giao (Teacher)
+// ============================================
+/**
+ * Lấy danh sách tất cả assignments do giáo viên hiện tại giao
+ * Route: GET /api/assignments
+ * Access: Private (Teacher)
+ * 
+ * Features:
+ * - Pagination (page, limit)
+ * - Tìm kiếm theo title của quiz
+ * - Populate thông tin quiz
+ */
 // Get all assignments (for teachers)
 export const getAssignments = async (req: Request, res: Response): Promise<void> => {
   try {

@@ -1,26 +1,40 @@
-import mongoose, { Document, Schema } from 'mongoose';
+// ============================================
+// FILE: Exam.ts
+// MÔ TẢ: Model định nghĩa cấu trúc dữ liệu Exam (Kỳ thi) trong MongoDB
+// CHỨC NĂNG: Schema và Interface cho Exam collection - Lưu thông tin kỳ thi (có thể dùng với Invitation)
+// ============================================
 
+import mongoose, { Document, Schema } from 'mongoose'; // Mongoose để làm việc với MongoDB
+
+// ============================================
+// INTERFACE IExam - Định nghĩa type cho Exam
+// ============================================
+/**
+ * Interface mô tả cấu trúc dữ liệu của Exam trong database
+ * Kế thừa từ Document của Mongoose
+ * Lưu thông tin kỳ thi (có thể được tạo từ Invitation)
+ */
 export interface IExam extends Document {
-  quiz: mongoose.Types.ObjectId;
-  invitation: mongoose.Types.ObjectId;
-  studentInfo: {
-    name: string;
-    studentId: string;
-    email: string;
+  quiz: mongoose.Types.ObjectId;              // ID của bài thi (reference đến Quiz)
+  invitation: mongoose.Types.ObjectId;         // ID của invitation (reference đến Invitation)
+  studentInfo: {                               // Thông tin sinh viên tại thời điểm thi
+    name: string;                             // Tên sinh viên
+    studentId: string;                         // MSSV
+    email: string;                             // Email
   };
-  startTime: Date;
-  endTime?: Date;
-  status: 'pending' | 'in-progress' | 'completed' | 'expired';
-  answers: {
-    questionId: mongoose.Types.ObjectId;
-    answer: any;
-    isCorrect: boolean;
-    points: number;
+  startTime: Date;                            // Thời gian bắt đầu thi
+  endTime?: Date;                             // Thời gian kết thúc thi (optional)
+  status: 'pending' | 'in-progress' | 'completed' | 'expired'; // Trạng thái kỳ thi
+  answers: {                                  // Mảng câu trả lời
+    questionId: mongoose.Types.ObjectId;      // ID câu hỏi
+    answer: any;                              // Câu trả lời
+    isCorrect: boolean;                      // Đúng hay sai
+    points: number;                           // Điểm số
   }[];
-  totalScore: number;
-  submittedAt?: Date;
-  createdAt: Date;
-  updatedAt: Date;
+  totalScore: number;                         // Tổng điểm
+  submittedAt?: Date;                         // Thời gian nộp bài (optional)
+  createdAt: Date;                            // Ngày tạo (tự động thêm bởi timestamps)
+  updatedAt: Date;                            // Ngày cập nhật cuối (tự động thêm bởi timestamps)
 }
 
 const ExamSchema = new Schema<IExam>({

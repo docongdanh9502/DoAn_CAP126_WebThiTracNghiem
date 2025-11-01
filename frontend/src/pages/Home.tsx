@@ -1,15 +1,41 @@
-import React from 'react';
-import { Box, Button, Container, Typography, Card, CardContent, Stack, Chip, Avatar } from '@mui/material';
-import QuizIcon from '@mui/icons-material/Quiz';
-import AssignmentTurnedInIcon from '@mui/icons-material/AssignmentTurnedIn';
-import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
-import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
+// ============================================
+// FILE: Home.tsx
+// MÔ TẢ: Trang chủ (landing page) - Public page giới thiệu về Quiz Platform
+// CHỨC NĂNG: Hiển thị thông tin giới thiệu, features, call-to-action buttons (Login/Register hoặc Dashboard)
+// ============================================
 
+import React from 'react'; // React
+import { Box, Button, Container, Typography, Card, CardContent, Stack, Chip, Avatar } from '@mui/material';
+import QuizIcon from '@mui/icons-material/Quiz';                      // Icon quiz
+import AssignmentTurnedInIcon from '@mui/icons-material/AssignmentTurnedIn'; // Icon assignment
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';      // Icon awesome
+import { useNavigate } from 'react-router-dom'; // React Router navigation
+import { useAuth } from '../contexts/AuthContext'; // Authentication context
+
+/**
+ * Component Home - Trang chủ (landing page)
+ * - Hiển thị thông tin giới thiệu về Quiz Platform
+ * - Features cards (Tạo đề nhanh, Giao bài linh hoạt, Chấm điểm tự động)
+ * - Call-to-action buttons:
+ *   - Nếu đã đăng nhập: "Vào bảng điều khiển" / "Xem bài thi"
+ *   - Nếu chưa đăng nhập: "Bắt đầu ngay" / "Đăng ký miễn phí"
+ * - Footer với thông tin liên hệ
+ */
 const Home: React.FC = () => {
+  // Hook để điều hướng
   const navigate = useNavigate();
+  
+  // Lấy user từ AuthContext (null nếu chưa đăng nhập)
   const { user } = useAuth();
 
+  // ============================================
+  // HANDLE PRIMARY CTA - Xử lý button chính
+  // ============================================
+  /**
+   * Function xử lý khi click button chính
+   * - Nếu đã đăng nhập: redirect về dashboard
+   * - Nếu chưa đăng nhập: redirect về login
+   */
   const handlePrimaryCta = () => {
     if (user) {
       navigate('/dashboard');
@@ -18,6 +44,14 @@ const Home: React.FC = () => {
     }
   };
 
+  // ============================================
+  // HANDLE SECONDARY CTA - Xử lý button phụ
+  // ============================================
+  /**
+   * Function xử lý khi click button phụ
+   * - Nếu đã đăng nhập: redirect về quizzes
+   * - Nếu chưa đăng nhập: redirect về register
+   */
   const handleSecondaryCta = () => {
     if (user) {
       navigate('/quizzes');
@@ -180,8 +214,11 @@ const Home: React.FC = () => {
 
       {/* Footer */}
       <Box sx={{ borderTop: '1px solid #eef2f8', bgcolor: 'white' }}>
-        <Container maxWidth="lg" sx={{ py: 2.5 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <Container maxWidth="lg" sx={{ py: 3 }}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
+            <Typography variant="body2" color="text.secondary">
+              Liên hệ hỗ trợ: <Typography component="span" sx={{ fontWeight: 'medium', color: 'primary.main' }}>admin@quizplatform.com</Typography>
+            </Typography>
             <Typography variant="body2" color="text.secondary">© 2025 Quiz Platform</Typography>
           </Box>
         </Container>

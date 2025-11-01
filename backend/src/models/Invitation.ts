@@ -1,14 +1,28 @@
-import mongoose, { Document, Schema } from 'mongoose';
+// ============================================
+// FILE: Invitation.ts
+// MÔ TẢ: Model định nghĩa cấu trúc dữ liệu Invitation (Lời mời tham gia thi) trong MongoDB
+// CHỨC NĂNG: Schema và Interface cho Invitation collection - Lưu thông tin lời mời tham gia thi qua email/token
+// ============================================
 
+import mongoose, { Document, Schema } from 'mongoose'; // Mongoose để làm việc với MongoDB
+
+// ============================================
+// INTERFACE IInvitation - Định nghĩa type cho Invitation
+// ============================================
+/**
+ * Interface mô tả cấu trúc dữ liệu của Invitation trong database
+ * Kế thừa từ Document của Mongoose
+ * Lưu thông tin lời mời tham gia thi (có thể dùng token để truy cập)
+ */
 export interface IInvitation extends Document {
-  quiz: mongoose.Types.ObjectId;
-  email: string;
-  studentName: string;
-  studentId: string;
-  token: string;
-  isUsed: boolean;
-  expiresAt: Date;
-  createdAt: Date;
+  quiz: mongoose.Types.ObjectId;   // ID của bài thi (reference đến Quiz)
+  email: string;                   // Email của sinh viên được mời
+  studentName: string;             // Tên sinh viên
+  studentId: string;               // MSSV
+  token: string;                   // Token để truy cập bài thi (unique)
+  isUsed: boolean;                // Đã sử dụng token chưa (default: false)
+  expiresAt: Date;                // Thời gian hết hạn (default: 24 giờ)
+  createdAt: Date;                 // Ngày tạo (tự động thêm bởi timestamps)
 }
 
 const InvitationSchema = new Schema<IInvitation>({

@@ -1,21 +1,36 @@
-import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { ThemeProvider, createTheme } from '@mui/material/styles';
-import CssBaseline from '@mui/material/CssBaseline';
-import { AuthProvider, useAuth } from './contexts/AuthContext';
-import Layout from './components/Layout';
-import Login from './pages/Login';
-import Register from './pages/Register';
-import Dashboard from './pages/Dashboard';
-import Quizzes from './pages/Quizzes';
-import Questions from './pages/Questions';
-import Students from './pages/Students';
-import Profile from './pages/Profile';
-import QuizTaking from './pages/QuizTaking';
-import Home from './pages/Home';
-import ForgotPassword from './pages/ForgotPassword';
-import Results from './pages/Results';
+// ============================================
+// FILE: App.tsx
+// MÔ TẢ: Component chính của ứng dụng React, định nghĩa routing và theme
+// CHỨC NĂNG: Khởi tạo Router, Theme, AuthProvider và các routes (public, protected, admin)
+// ============================================
 
+import React from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'; // React Router
+import { ThemeProvider, createTheme } from '@mui/material/styles'; // Material-UI Theme
+import CssBaseline from '@mui/material/CssBaseline'; // Material-UI CssBaseline (reset CSS)
+import { AuthProvider, useAuth } from './contexts/AuthContext'; // Context quản lý authentication
+import Layout from './components/Layout'; // Layout component (header, footer, sidebar)
+import Login from './pages/Login'; // Trang đăng nhập
+import Register from './pages/Register'; // Trang đăng ký
+import Dashboard from './pages/Dashboard'; // Trang dashboard
+import Quizzes from './pages/Quizzes'; // Trang quản lý bài thi
+import Questions from './pages/Questions'; // Trang quản lý câu hỏi
+import Profile from './pages/Profile'; // Trang profile
+import QuizTaking from './pages/QuizTaking'; // Trang làm bài thi
+import Home from './pages/Home'; // Trang chủ (public)
+import ForgotPassword from './pages/ForgotPassword'; // Trang quên mật khẩu
+import Results from './pages/Results'; // Trang xem kết quả
+import Users from './pages/Users'; // Trang quản lý users (Admin)
+
+// ============================================
+// MATERIAL-UI THEME - Cấu hình giao diện
+// ============================================
+/**
+ * Theme configuration cho Material-UI
+ * - Định nghĩa màu sắc (primary, secondary, success, warning, error, info)
+ * - Cấu hình typography (font, font-weight)
+ * - Custom component styles (Button, Card, TextField, Chip)
+ */
 const theme = createTheme({
   palette: {
     primary: {
@@ -117,33 +132,94 @@ const theme = createTheme({
   },
 });
 
+// ============================================
+// PROTECTED ROUTE - Route yêu cầu đăng nhập
+// ============================================
+/**
+ * Component bảo vệ route - chỉ cho phép user đã đăng nhập truy cập
+ * - Nếu đang loading, hiển thị "Loading..."
+ * - Nếu chưa đăng nhập, redirect về /login
+ * - Nếu đã đăng nhập, cho phép truy cập
+ */
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, loading } = useAuth();
 
+  // Hiển thị loading khi đang kiểm tra authentication
   if (loading) {
     return <div>Loading...</div>;
   }
 
+  // Nếu có user, cho phép truy cập; ngược lại redirect về login
   return user ? <>{children}</> : <Navigate to="/login" />;
 };
 
+// ============================================
+// PUBLIC ROUTE - Route công khai (không cho phép đã đăng nhập)
+// ============================================
+/**
+ * Component route công khai - chỉ cho phép user chưa đăng nhập truy cập
+ * - Nếu đang loading, hiển thị "Loading..."
+ * - Nếu đã đăng nhập, redirect về /dashboard
+ * - Nếu chưa đăng nhập, cho phép truy cập (login, register, forgot password)
+ */
 const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, loading } = useAuth();
 
+  // Hiển thị loading khi đang kiểm tra authentication
   if (loading) {
     return <div>Loading...</div>;
   }
 
+  // Nếu đã đăng nhập, redirect về dashboard; ngược lại cho phép truy cập
   return user ? <Navigate to="/dashboard" /> : <>{children}</>;
 };
 
+// ============================================
+// ADMIN ROUTE - Route chỉ dành cho Admin
+// ============================================
+/**
+ * Component route chỉ dành cho Admin
+ * - Nếu đang loading, hiển thị "Loading..."
+ * - Nếu chưa đăng nhập, redirect về /login
+ * - Nếu không phải admin, redirect về /dashboard
+ * - Chỉ admin mới được truy cập
+ */
+const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user, loading } = useAuth();
+  
+  if (loading) return <div>Loading...</div>; // Đang kiểm tra
+  if (!user) return <Navigate to="/login" />; // Chưa đăng nhập
+  if (user.role !== 'admin') return <Navigate to="/dashboard" />; // Không phải admin
+  
+  return <>{children}</>; // Cho phép admin truy cập
+};
+
+// ============================================
+// APP COMPONENT - Component chính
+// ============================================
+/**
+ * Component App - Entry point của ứng dụng React
+ * - Wrap toàn bộ app với ThemeProvider (Material-UI theme)
+ * - Wrap với AuthProvider (quản lý authentication state)
+ * - Định nghĩa tất cả routes của ứng dụng
+ */
 function App() {
   return (
+    // ThemeProvider: Áp dụng Material-UI theme cho toàn bộ app
     <ThemeProvider theme={theme}>
+      {/* CssBaseline: Reset CSS và normalize styles */}
       <CssBaseline />
+      
+      {/* AuthProvider: Cung cấp authentication context cho toàn bộ app */}
       <AuthProvider>
+        {/* Router: React Router để điều hướng giữa các trang */}
         <Router>
           <Routes>
+            {/* ============================================
+                PUBLIC ROUTES - Không cần đăng nhập
+                ============================================ */}
+            
+            {/* Trang đăng nhập */}
             <Route 
               path="/login" 
               element={
@@ -152,6 +228,8 @@ function App() {
                 </PublicRoute>
               } 
             />
+            
+            {/* Trang quên mật khẩu */}
             <Route 
               path="/forgot" 
               element={
@@ -160,6 +238,8 @@ function App() {
                 </PublicRoute>
               } 
             />
+            
+            {/* Trang đăng ký */}
             <Route 
               path="/register" 
               element={
@@ -168,6 +248,15 @@ function App() {
                 </PublicRoute>
               } 
             />
+            
+            {/* Trang chủ (public) */}
+            <Route path="/" element={<Home />} />
+            
+            {/* ============================================
+                PROTECTED ROUTES - Cần đăng nhập
+                ============================================ */}
+            
+            {/* Trang dashboard (tùy role hiển thị khác nhau) */}
             <Route 
               path="/dashboard" 
               element={
@@ -178,6 +267,8 @@ function App() {
                 </ProtectedRoute>
               } 
             />
+            
+            {/* Trang quản lý bài thi */}
             <Route 
               path="/quizzes" 
               element={
@@ -188,6 +279,8 @@ function App() {
                 </ProtectedRoute>
               } 
             />
+            
+            {/* Trang quản lý câu hỏi */}
             <Route 
               path="/questions" 
               element={
@@ -198,16 +291,8 @@ function App() {
                 </ProtectedRoute>
               } 
             />
-            <Route 
-              path="/students" 
-              element={
-                <ProtectedRoute>
-                  <Layout>
-                    <Students />
-                  </Layout>
-                </ProtectedRoute>
-              } 
-            />
+            
+            {/* Trang profile */}
             <Route 
               path="/profile" 
               element={
@@ -218,6 +303,9 @@ function App() {
                 </ProtectedRoute>
               } 
             />
+            
+            {/* Trang làm bài thi */}
+            {/* :quizId - ID bài thi, :assignmentId? - ID assignment (optional) */}
             <Route 
               path="/quiz/:quizId/:assignmentId?" 
               element={
@@ -228,16 +316,8 @@ function App() {
                 </ProtectedRoute>
               } 
             />
-            <Route 
-              path="/exams" 
-              element={
-                <ProtectedRoute>
-                  <Layout>
-                    <div>Exams Page - Coming Soon</div>
-                  </Layout>
-                </ProtectedRoute>
-              } 
-            />
+            
+            {/* Trang xem kết quả */}
             <Route 
               path="/results" 
               element={
@@ -248,17 +328,34 @@ function App() {
                 </ProtectedRoute>
               } 
             />
+            
+            {/* Trang Exams (chưa implement) */}
             <Route 
-              path="/users" 
+              path="/exams" 
               element={
                 <ProtectedRoute>
                   <Layout>
-                    <Students />
+                    <div>Exams Page - Coming Soon</div>
                   </Layout>
                 </ProtectedRoute>
               } 
             />
-            <Route path="/" element={<Home />} />
+            
+            {/* ============================================
+                ADMIN ROUTES - Chỉ Admin mới có quyền
+                ============================================ */}
+            
+            {/* Trang quản lý users (chỉ Admin) */}
+            <Route 
+              path="/users" 
+              element={
+                <AdminRoute>
+                  <Layout>
+                    <Users />
+                  </Layout>
+                </AdminRoute>
+              } 
+            />
           </Routes>
         </Router>
       </AuthProvider>

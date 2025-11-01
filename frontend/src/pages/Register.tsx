@@ -1,64 +1,112 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import {
-  Container,
-  Paper,
-  TextField,
-  Button,
-  Typography,
-  Box,
-  Alert,
-  CircularProgress,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
-  SelectChangeEvent,
-} from '@mui/material';
-import { useAuth } from '../contexts/AuthContext';
+// ============================================
+// FILE: Register.tsx
+// MÔ TẢ: Trang đăng ký tài khoản
+// CHỨC NĂNG: Form đăng ký với các fields khác nhau tùy role (student/teacher), validate và gọi API đăng ký
+// ============================================
 
+import React, { useState } from 'react'; // React hooks
+import { useNavigate } from 'react-router-dom'; // React Router navigation
+import {
+  Container,          // Container component
+  Paper,              // Paper component
+  TextField,          // Input field component
+  Button,             // Button component
+  Typography,         // Typography component
+  Box,               // Box component
+  Alert,              // Alert component
+  CircularProgress,   // Loading spinner
+  FormControl,        // Form control component
+  InputLabel,         // Input label
+  Select,             // Select dropdown
+  MenuItem,           // Select option item
+  SelectChangeEvent,  // Select change event type
+} from '@mui/material';
+import { useAuth } from '../contexts/AuthContext'; // Authentication context
+
+/**
+ * Component Register - Trang đăng ký
+ * - Form đăng ký với các fields: email, password, role, username
+ * - Nếu role = 'student': thêm studentId, fullName, class, gender
+ * - Nếu role = 'teacher': thêm fullName
+ * - Validate password (phải khớp, tối thiểu 6 ký tự)
+ * - Gọi register API và redirect về dashboard khi thành công
+ */
 const Register: React.FC = () => {
+  // State quản lý dữ liệu form
   const [formData, setFormData] = useState({
-    email: '',
-    password: '',
-    confirmPassword: '',
-    role: 'student',
-    username: '',
-    // Student-only fields
-    studentId: '',
-    fullName: '',
-    class: '',
-    gender: 'male',
+    email: '',            // Email
+    password: '',         // Mật khẩu
+    confirmPassword: '',  // Xác nhận mật khẩu
+    role: 'student',      // Vai trò (student hoặc teacher)
+    username: '',         // Tên đăng nhập
+    // Các fields chỉ dành cho student
+    studentId: '',        // MSSV
+    fullName: '',         // Họ và tên
+    class: '',           // Lớp học
+    gender: 'male',      // Giới tính
   });
+  
+  // State quản lý thông báo lỗi
   const [error, setError] = useState('');
+  
+  // State quản lý trạng thái loading
   const [loading, setLoading] = useState(false);
   
+  // Lấy function register từ AuthContext
   const { register } = useAuth();
+  
+  // Hook để điều hướng
   const navigate = useNavigate();
 
+  // ============================================
+  // HANDLE CHANGE - Xử lý thay đổi input field
+  // ============================================
+  /**
+   * Function xử lý khi thay đổi giá trị trong TextField
+   * - Cập nhật formData state với giá trị mới
+   */
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({
       ...formData,
-      [e.target.name]: e.target.value,
+      [e.target.name]: e.target.value, // Cập nhật field tương ứng với name
     });
   };
 
+  // ============================================
+  // HANDLE SELECT CHANGE - Xử lý thay đổi Select dropdown
+  // ============================================
+  /**
+   * Function xử lý khi thay đổi giá trị trong Select dropdown
+   * - Cập nhật formData state với giá trị mới
+   */
   const handleSelectChange = (e: SelectChangeEvent<string>) => {
     setFormData({
       ...formData,
-      [e.target.name]: e.target.value,
+      [e.target.name]: e.target.value, // Cập nhật field tương ứng với name
     });
   };
 
+  // ============================================
+  // HANDLE SUBMIT - Xử lý submit form đăng ký
+  // ============================================
+  /**
+   * Function xử lý khi submit form đăng ký
+   * - Validate password (phải khớp và >= 6 ký tự)
+   * - Validate required fields theo role
+   * - Gọi register API
+   * - Redirect về dashboard nếu thành công
+   */
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
+    e.preventDefault(); // Ngăn form submit mặc định
+    setError('');       // Xóa lỗi cũ
 
+    // Validate password phải khớp
     if (formData.password !== formData.confirmPassword) {
       setError('Mật khẩu xác nhận không khớp');
       return;
     }
 
+    // Validate độ dài password (tối thiểu 6 ký tự)
     if (formData.password.length < 6) {
       setError('Mật khẩu phải có ít nhất 6 ký tự');
       return;

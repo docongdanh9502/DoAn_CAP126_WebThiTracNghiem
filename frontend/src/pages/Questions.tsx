@@ -42,7 +42,6 @@ import {
   CheckCircle as CheckCircleIcon,
   FilterList as FilterListIcon,
   Search as SearchIcon,
-  Sort as SortIcon,
   Lightbulb as LightbulbIcon,
   Psychology as PsychologyIcon,
   Visibility as VisibilityIcon
@@ -71,6 +70,7 @@ const Questions: React.FC = () => {
   const [filterDifficulty, setFilterDifficulty] = useState('');
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [total, setTotal] = useState(0);
 
   const fetchQuestions = useCallback(async () => {
     try {
@@ -82,6 +82,7 @@ const Questions: React.FC = () => {
         difficulty: filterDifficulty
       });
       setQuestions(response.data.data.questions);
+      setTotal(response.data.data.pagination?.total || 0);
     } catch (error) {
       console.error('Error fetching questions:', error);
       setError('Không thể tải danh sách câu hỏi');
@@ -403,14 +404,6 @@ const Questions: React.FC = () => {
               >
                 Bộ lọc
               </Button>
-              <Button
-                variant="outlined"
-                startIcon={<SortIcon />}
-                onClick={() => {/* Handle sort */}}
-                sx={{ borderRadius: 2 }}
-              >
-                Sắp xếp
-              </Button>
             </Box>
           </CardContent>
         </Card>
@@ -563,7 +556,7 @@ const Questions: React.FC = () => {
             <TablePagination
               rowsPerPageOptions={[5, 10, 25, 50]}
               component="div"
-              count={questions.length}
+              count={total}
               rowsPerPage={rowsPerPage}
               page={page}
               onPageChange={(_, newPage) => setPage(newPage)}

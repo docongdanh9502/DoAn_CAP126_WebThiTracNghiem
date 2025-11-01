@@ -1,16 +1,54 @@
-import React, { useState } from 'react';
-import { Container, Paper, Typography, Box, TextField, Button, Alert, CircularProgress, Stack } from '@mui/material';
-import { authAPI } from '../services/api';
+// ============================================
+// FILE: ForgotPassword.tsx
+// MÔ TẢ: Trang quên mật khẩu - Reset password với OTP
+// CHỨC NĂNG: 2 bước: 1) Nhập email/username để nhận OTP, 2) Nhập OTP và mật khẩu mới
+// ============================================
 
+import React, { useState } from 'react'; // React hooks
+import { useNavigate } from 'react-router-dom'; // React Router navigation
+import { Container, Paper, Typography, Box, TextField, Button, Alert, CircularProgress, Stack } from '@mui/material';
+import { authAPI } from '../services/api'; // API service
+
+/**
+ * Component ForgotPassword - Trang quên mật khẩu
+ * - Step 1: Nhập email hoặc username, gửi OTP
+ * - Step 2: Nhập OTP và mật khẩu mới, reset password
+ * - Tự động redirect về login sau khi thành công
+ */
 const ForgotPassword: React.FC = () => {
+  // Hook để điều hướng
+  const navigate = useNavigate();
+  
+  // State quản lý email hoặc username (identifier)
   const [identifier, setIdentifier] = useState(''); // email or username
+  
+  // State quản lý mã OTP
   const [otp, setOtp] = useState('');
+  
+  // State quản lý mật khẩu mới
   const [newPassword, setNewPassword] = useState('');
+  
+  // State quản lý bước hiện tại (1: gửi OTP, 2: nhập OTP và reset)
   const [step, setStep] = useState<1 | 2>(1);
+  
+  // State quản lý trạng thái loading
   const [loading, setLoading] = useState(false);
+  
+  // State quản lý thông báo thành công
   const [message, setMessage] = useState<string | null>(null);
+  
+  // State quản lý thông báo lỗi
   const [error, setError] = useState<string | null>(null);
 
+  // ============================================
+  // SEND OTP - Gửi mã OTP
+  // ============================================
+  /**
+   * Function gửi OTP đến email của user
+   * - Phân biệt email hay username (kiểm tra có '@')
+   * - Gọi API requestPasswordReset
+   * - Chuyển sang step 2 nếu thành công
+   */
   const sendOtp = async () => {
     try {
       setLoading(true);
@@ -30,6 +68,15 @@ const ForgotPassword: React.FC = () => {
     }
   };
 
+  // ============================================
+  // RESET PASSWORD - Reset mật khẩu với OTP
+  // ============================================
+  /**
+   * Function reset mật khẩu với OTP
+   * - Validate OTP và mật khẩu mới
+   * - Gọi API resetPasswordWithOtp
+   * - Redirect về login sau 2 giây nếu thành công
+   */
   const resetPassword = async () => {
     try {
       if (!otp || !newPassword) {
@@ -43,7 +90,12 @@ const ForgotPassword: React.FC = () => {
       payload.otp = otp;
       payload.newPassword = newPassword;
       await authAPI.resetPasswordWithOtp(payload);
-      setMessage('Đặt lại mật khẩu thành công. Bạn có thể đăng nhập với mật khẩu mới.');
+      setMessage('Đặt lại mật khẩu thành công. Đang chuyển về trang đăng nhập...');
+      
+      // Redirect về trang đăng nhập sau 2 giây
+      setTimeout(() => {
+        navigate('/login');
+      }, 2000);
     } catch (e: any) {
       setError(e.response?.data?.message || 'Không thể đặt lại mật khẩu');
     } finally {
